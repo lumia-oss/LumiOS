@@ -1,22 +1,28 @@
 ENTRY(_start)
 OUTPUT_FORMAT(elf32-i386)
-SECTIONS
-{
+
+SECTIONS {
     . = 0x1000;
 
-    .text : {
+    .text ALIGN(4K) : {
         *(.text)
     }
 
-    .rodata : {
+    .rodata ALIGN(4K) : {
         *(.rodata)
     }
 
-    .data : {
+    .data ALIGN(4K) : {
         *(.data)
     }
 
-    .bss : {
+    .bss ALIGN(4K) : {
+        *(COMMON)
         *(.bss)
+    }
+
+    /DISCARD/ : {
+        *(.eh_frame)
+        *(.comment)
     }
 }

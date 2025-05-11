@@ -1,6 +1,7 @@
-; Простой загрузчик (16-битный реальный режим)
-org 0x7C00
-bits 16
+[bits 16]
+[org 0x7c00]
+
+KERNEL_OFFSET equ 0x1000    ; Соответствует линкер скрипту
 
 start:
     ; Настройка сегментных регистров
@@ -8,7 +9,7 @@ start:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, 0x7C00
+    mov sp, 0x7c00
 
     ; Сохраняем номер загрузочного диска
     mov [boot_drive], dl
@@ -22,18 +23,20 @@ start:
     call print_string
 
     ; Загрузка ядра с диска
-    mov bx, 0x7E00      ; Адрес загрузки ядра
-    mov dh, 10          ; Количество секторов для чтения (увеличили для нового ядра)
+    mov bx, KERNEL_OFFSET  ; Загружаем ядро по адресу из линкер скрипта
+    mov dh, 15            ; Количество секторов (увеличено для безопасности)
     mov dl, [boot_drive]
     call load_disk
 
-    ; Переход в защищенный режим
-    cli
-    lgdt [gdt_descriptor]
+    ; Переключение в защищенный режим
+    cli                     ; Отключаем прерывания
+    lgdt [gdt_descriptor]   ; Загружаем GDT
+
     mov eax, cr0
-    or eax, 0x1
+    or eax, 0x1            ; Включаем защищенный режим
     mov cr0, eax
-    jmp CODE_SEG:init_pm
+
+    jmp CODE_SEG:init_pm   ; Дальний прыжок для очистки конвейера
 
 disk_error:
     mov si, disk_error_msg
@@ -53,46 +56,60 @@ print_string:
     popa
     ret
 
-; Функция загрузки с диска
 load_disk:
+    pusha
     push dx
+
     mov ah, 0x02    ; Чтение секторов
     mov al, dh      ; Количество секторов
     mov ch, 0       ; Цилиндр 0
     mov dh, 0       ; Головка 0
     mov cl, 2       ; Начиная со второго сектора
+
     int 0x13
     jc disk_error   ; Проверка на ошибку
+
     pop dx
     cmp dh, al      ; Сравниваем сколько секторов реально прочитано
     jne disk_error
+
+    popa
     ret
 
-; Данные
-msg_loading db "Loading kernel...", 0x0D, 0x0A, 0
-msg_disk_error db "Disk error!", 0x0D, 0x0A, 0
-boot_drive: db 0
-disk_error_msg: db "Disk read error!", 0
+[bits 32]
+init_pm:
+    mov ax, DATA_SEG    ; Теперь в защищенном режиме
+    mov ds, ax          ; Обновляем все сегментные регистры
+    mov ss, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
 
-; GDT для защищенного режима
+    mov ebp, 0x90000    ; Обновляем стек
+    mov esp, ebp
+
+    jmp CODE_SEG:KERNEL_OFFSET    ; Прыжок на ядро с правильным сегментом
+
+; GDT
 gdt_start:
-gdt_null:
-    dd 0x0
-    dd 0x0
-gdt_code:
-    dw 0xFFFF
-    dw 0x0
-    db 0x0
-    db 10011010b
-    db 11001111b
-    db 0x0
-gdt_data:
-    dw 0xFFFF
+    dq 0x0        ; Нулевой дескриптор
+
+gdt_code:         ; Сегмент кода
+    dw 0xffff     ; Limit (0-15)
+    dw 0x0        ; Base (0-15)
+    db 0x0        ; Base (16-23)
+    db 10011010b  ; Flags (Present, Ring 0, Code)
+    db 11001111b  ; Flags + Limit (16-19)
+    db 0x0        ; Base (24-31)
+
+gdt_data:         ; Сегмент данных
+    dw 0xffff
     dw 0x0
     db 0x0
     db 10010010b
     db 11001111b
     db 0x0
+
 gdt_end:
 
 gdt_descriptor:
@@ -102,21 +119,10 @@ gdt_descriptor:
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
 
-; Переход в 32-битный режим
-bits 32
-init_pm:
-    mov ax, DATA_SEG
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-    mov ebp, 0x90000
-    mov esp, ebp
+; Данные
+msg_loading: db "Loading kernel...", 0x0D, 0x0A, 0
+disk_error_msg: db "Disk read error!", 0
+boot_drive: db 0
 
-    ; Переход к ядру
-    jmp 0x7E00
-
-; Заполнение до 512 байт и сигнатура загрузочного сектора
 times 510-($-$$) db 0
-dw 0xAA55
+dw 0xaa55
