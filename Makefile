@@ -1,9 +1,14 @@
-CC = i686-elf-gcc
+CC = gcc
 AS = nasm
-LD = i686-elf-ld
+LD = ld
 
-CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -m32
-LDFLAGS = -T linker.ld -nostdlib
+# Флаги для компиляции без стандартной библиотеки
+CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
+         -nostartfiles -nodefaultlibs -Wall -Wextra -Werror -c \
+         -fno-exceptions -ffreestanding -O2
+
+# Флаги линковки
+LDFLAGS = -T linker.ld -melf_i386 -nostdlib
 
 OBJECTS = kernel_entry.o kernel.o io.o
 
@@ -16,7 +21,7 @@ kernel_entry.o: kernel_entry.asm
 	$(AS) -f elf32 kernel_entry.asm -o kernel_entry.o
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $< -o $@
 
 kernel.bin: $(OBJECTS)
 	$(LD) $(LDFLAGS) $(OBJECTS) -o kernel.bin

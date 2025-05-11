@@ -1,7 +1,28 @@
-@echo offecho Building LumiOS...REM Проверяем наличие необходимых инструментовwhere make >nul 2>nulif %ERRORLEVEL% NEQ 0 (    echo Error: Make is not installed!    echo Please install Make from: https://gnuwin32.sourceforge.net/packages/make.htm    pause    exit /b 1)where i686-elf-gcc >nul 2>nul
+@echo off
+echo Building LumiOS...
+
+REM Проверяем наличие необходимых инструментов
+where gcc >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo Error: i686-elf-gcc cross-compiler is not installed!
-    echo Please install it from: https://wiki.osdev.org/GCC_Cross-Compiler
+    echo Error: GCC is not installed!
+    echo Please install MinGW-w64 from: https://winlibs.com/
+    echo Make sure to choose the version with i686 (32-bit) support
+    pause
+    exit /b 1
+)
+
+where nasm >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo Error: NASM is not installed!
+    echo Please install NASM from: https://www.nasm.us/
+    pause
+    exit /b 1
+)
+
+where make >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo Error: Make is not installed!
+    echo Please install Make from MinGW or install complete MinGW-w64
     pause
     exit /b 1
 )
