@@ -2,34 +2,38 @@ CC = gcc
 AS = nasm
 LD = ld
 
-# Флаги для компиляции без стандартной библиотеки
 CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
          -nostartfiles -nodefaultlibs -Wall -Wextra -c \
-         -fno-exceptions -ffreestanding -O0 -g
+         -fno-exceptions -ffreestanding -O0 -g3 \
+         -fno-omit-frame-pointer
 
-# Флаги линковки
-LDFLAGS = -T linker.ld -melf_i386 -nostdlib --oformat binary
+LDFLAGS = -melf_i386 -nostdlib -T linker.ld --oformat binary -Map=kernel.map
 
 OBJECTS = kernel_entry.o kernel.o io.o
 
-all: os-image
+.PHONY: all clean run
+
+all: clean os-image
 
 boot.bin: boot.asm
-	$(AS) -f bin -o boot.bin boot.asm
+	$(AS) -f bin boot.asm -o boot.bin -l boot.lst
 
 kernel_entry.o: kernel_entry.asm
-	$(AS) -f elf32 -g -F dwarf kernel_entry.asm -o kernel_entry.o
+	$(AS) -f elf32 kernel_entry.asm -o kernel_entry.o -l kernel_entry.lst
 
 %.o: %.c
 	$(CC) $(CFLAGS) $< -o $@
 
 kernel.bin: $(OBJECTS)
-	$(LD) $(LDFLAGS) -o kernel.bin $(OBJECTS)
+	$(LD) $(LDFLAGS) $(OBJECTS) -o kernel.bin
+	objdump -M intel -d kernel_entry.o > kernel_entry.dump
+	objdump -M intel -d kernel.o > kernel.dump
 
 os-image: boot.bin kernel.bin
 	cat boot.bin kernel.bin > os-image.bin
 
-clean:
-	rm -f *.o *.bin
+run: os-image
+	qemu-system-i386 -fda os-image.bin -d cpu_reset,guest_errors -no-reboot -monitor stdio
 
-.PHONY: all clean
+clean:
+	rm -f *.o *.bin *.lst *.dump *.map

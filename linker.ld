@@ -1,11 +1,13 @@
 ENTRY(_start)
 OUTPUT_FORMAT(elf32-i386)
-
-SECTIONS {
+SECTIONS
+{
     . = 0x1000;
 
     .text ALIGN(4K) : {
-        *(.text)
+        *(.text._start)
+        *(.text.kernel_main)
+        *(.text*)
     }
 
     .rodata ALIGN(4K) : {
@@ -19,10 +21,14 @@ SECTIONS {
     .bss ALIGN(4K) : {
         *(COMMON)
         *(.bss)
+        *(.bootstrap_stack)
     }
 
+    kernel_end = .;
+
     /DISCARD/ : {
-        *(.eh_frame)
         *(.comment)
+        *(.eh_frame)
+        *(.note.gnu.build-id)
     }
 }

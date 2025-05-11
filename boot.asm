@@ -1,7 +1,9 @@
 [bits 16]
 [org 0x7c00]
 
-KERNEL_OFFSET equ 0x1000    ; Соответствует линкер скрипту
+; Константы
+KERNEL_OFFSET equ 0x1000
+VIDEO_MEMORY equ 0xb8000
 
 start:
     ; Настройка сегментных регистров
@@ -14,37 +16,44 @@ start:
     ; Сохраняем номер загрузочного диска
     mov [boot_drive], dl
 
-    ; Очистка экрана
-    mov ax, 0x0003
-    int 0x10
-
-    ; Сообщение о загрузке
-    mov si, msg_loading
+    ; Сообщение о начале загрузки
+    mov si, msg_start
     call print_string
 
     ; Загрузка ядра с диска
-    mov bx, KERNEL_OFFSET  ; Загружаем ядро по адресу из линкер скрипта
-    mov dh, 15            ; Количество секторов (увеличено для безопасности)
+    mov si, msg_load_kernel
+    call print_string
+
+    mov bx, KERNEL_OFFSET
+    mov dh, 20            ; Увеличиваем количество секторов
     mov dl, [boot_drive]
     call load_disk
 
-    ; Переключение в защищенный режим
-    cli                     ; Отключаем прерывания
-    lgdt [gdt_descriptor]   ; Загружаем GDT
+    mov si, msg_kernel_ok
+    call print_string
 
+    ; Подготовка к переключению в защищенный режим
+    mov si, msg_prep_pm
+    call print_string
+
+    cli
+    lgdt [gdt_descriptor]
+
+    ; Включаем A20 линию
+    in al, 0x92
+    or al, 2
+    out 0x92, al
+
+    ; Переключение в защищенный режим
     mov eax, cr0
-    or eax, 0x1            ; Включаем защищенный режим
+    or eax, 0x1
     mov cr0, eax
 
-    jmp CODE_SEG:init_pm   ; Дальний прыжок для очистки конвейера
+    ; Прыжок для очистки конвейера
+    jmp CODE_SEG:init_pm
 
-disk_error:
-    mov si, disk_error_msg
-    call print_string
-    jmp $
-
+; Функции реального режима
 print_string:
-    pusha
     mov ah, 0x0e
 .loop:
     lodsb
@@ -53,56 +62,91 @@ print_string:
     int 0x10
     jmp .loop
 .done:
+    ret
+
+print_hex:
+    pusha
+    mov cx, 4   ; 4 hex digits
+.loop:
+    dec cx
+    mov ax, dx
+    shr dx, 4
+    and ax, 0xf
+    mov bx, hex_chars
+    add bx, ax
+    mov al, [bx]
+    mov bx, cx
+    mov [hex_out + bx + 2], al
+    cmp cx, 0
+    jne .loop
+    mov si, hex_out
+    call print_string
     popa
     ret
 
 load_disk:
-    pusha
     push dx
-
-    mov ah, 0x02    ; Чтение секторов
-    mov al, dh      ; Количество секторов
-    mov ch, 0       ; Цилиндр 0
-    mov dh, 0       ; Головка 0
-    mov cl, 2       ; Начиная со второго сектора
-
+    mov ah, 0x02    ; BIOS read function
+    mov al, dh      ; Number of sectors
+    mov ch, 0x00    ; Cylinder 0
+    mov cl, 0x02    ; Start from sector 2
+    mov dh, 0x00    ; Head 0
     int 0x13
-    jc disk_error   ; Проверка на ошибку
-
+    jc disk_error
     pop dx
-    cmp dh, al      ; Сравниваем сколько секторов реально прочитано
+    cmp dh, al
     jne disk_error
-
-    popa
     ret
+
+disk_error:
+    mov si, msg_disk_error
+    call print_string
+    jmp $
 
 [bits 32]
 init_pm:
-    mov ax, DATA_SEG    ; Теперь в защищенном режиме
-    mov ds, ax          ; Обновляем все сегментные регистры
+    ; Настройка сегментных регистров для защищенного режима
+    mov ax, DATA_SEG
+    mov ds, ax
     mov ss, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
 
-    mov ebp, 0x90000    ; Обновляем стек
+    ; Настройка стека
+    mov ebp, 0x90000
     mov esp, ebp
 
-    jmp CODE_SEG:KERNEL_OFFSET    ; Прыжок на ядро с правильным сегментом
+    ; Вызов ядра
+    call KERNEL_OFFSET
+
+    ; Если мы сюда попали, значит что-то пошло не так
+    mov dword [VIDEO_MEMORY], 0x4F524F45 ; 'ERR' в красном цвете
+    jmp $
+
+; Данные
+msg_start db "Starting bootloader...", 0x0D, 0x0A, 0
+msg_load_kernel db "Loading kernel into memory...", 0x0D, 0x0A, 0
+msg_kernel_ok db "Kernel loaded successfully!", 0x0D, 0x0A, 0
+msg_prep_pm db "Preparing to switch to protected mode...", 0x0D, 0x0A, 0
+msg_disk_error db "Error loading kernel from disk!", 0x0D, 0x0A, 0
+hex_chars db "0123456789ABCDEF"
+hex_out db "0x0000", 0x0D, 0x0A, 0
+boot_drive db 0
 
 ; GDT
 gdt_start:
-    dq 0x0        ; Нулевой дескриптор
+    dd 0x0, 0x0    ; Нулевой дескриптор
 
-gdt_code:         ; Сегмент кода
-    dw 0xffff     ; Limit (0-15)
-    dw 0x0        ; Base (0-15)
-    db 0x0        ; Base (16-23)
-    db 10011010b  ; Flags (Present, Ring 0, Code)
-    db 11001111b  ; Flags + Limit (16-19)
-    db 0x0        ; Base (24-31)
+gdt_code:          ; Сегмент кода
+    dw 0xffff      ; Limit (0-15)
+    dw 0x0         ; Base (0-15)
+    db 0x0         ; Base (16-23)
+    db 10011010b   ; Access
+    db 11001111b   ; Flags + Limit (16-19)
+    db 0x0         ; Base (24-31)
 
-gdt_data:         ; Сегмент данных
+gdt_data:          ; Сегмент данных
     dw 0xffff
     dw 0x0
     db 0x0
@@ -119,10 +163,6 @@ gdt_descriptor:
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
 
-; Данные
-msg_loading: db "Loading kernel...", 0x0D, 0x0A, 0
-disk_error_msg: db "Disk read error!", 0
-boot_drive: db 0
-
-times 510-($-$$) db 0
+; Заполнение и сигнатура
+times 510 - ($ - $$) db 0
 dw 0xaa55

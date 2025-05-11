@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Проверка наличия необходимых инструментов
+# Проверка наличия инструментов
 command -v nasm >/dev/null 2>&1 || { echo "Error: NASM is not installed. Please install it using:"; echo "sudo pacman -S nasm"; exit 1; }
 command -v make >/dev/null 2>&1 || { echo "Error: Make is not installed. Please install it using:"; echo "sudo pacman -S make"; exit 1; }
 command -v gcc >/dev/null 2>&1 || { echo "Error: GCC is not installed. Please install it using:"; echo "sudo pacman -S gcc"; exit 1; }
 command -v qemu-system-i386 >/dev/null 2>&1 || { echo "Error: QEMU is not installed. Please install it using:"; echo "sudo pacman -S qemu-full"; exit 1; }
 
-# Проверка наличия 32-битных библиотек
+# Проверка multilib для 32-битной компиляции
 if ! pacman -Q lib32-gcc-libs >/dev/null 2>&1; then
     echo "Installing 32-bit support..."
     echo "Please run:"
@@ -14,11 +14,14 @@ if ! pacman -Q lib32-gcc-libs >/dev/null 2>&1; then
     exit 1
 fi
 
-# Очистка старых файлов
+# Очистка и сборка
 make clean
-
-# Сборка системы
 make
 
-# Запуск в QEMU с явным указанием формата
-qemu-system-i386 -fda os-image.bin -format raw
+# Запуск QEMU с отладочными опциями
+qemu-system-i386 \
+    -fda os-image.bin \
+    -d cpu_reset,int,guest_errors \
+    -no-reboot \
+    -monitor stdio \
+    -D qemu.log
